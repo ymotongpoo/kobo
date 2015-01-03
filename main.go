@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -14,9 +15,11 @@ import (
 )
 
 const (
-	NewContentsURL = `http://www.netriver.jp/rbs/usr/himanayaro/rivbb.cgi`
-	OldContentsURL = `http://www.netriver.jp/rbs/usr/umoo/rivbb.cgi`
-	OldArchiveURL  = `http://baka.bakufu.org/kobokora/mee/index.html`
+	NewContentsBaseURL = `http://www.netriver.jp/rbs/usr/himanayaro/`
+	NewContentsURL     = NewContentsBaseURL + `rivbb.cgi`
+	OldContentsURL     = `http://www.netriver.jp/rbs/usr/umoo/rivbb.cgi`
+	OldArchiveURL      = `http://baka.bakufu.org/kobokora/mee/index.html`
+	CustomUserAgent    = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36`
 )
 
 func main() {
@@ -29,38 +32,46 @@ func main() {
 	wg.Wait()
 }
 
+// NewContentsCrawler starts crawling on new contents pages.
 func NewContentsCrawler(wg *sync.WaitGroup) {
 	dir := filepath.Join(os.TempDir(), "new")
 	_ = dir
 	queue := make(chan string, 100)
 	go func() {
+		var wg sync.WaitGroup
 		for i := 0; i < 10; i++ {
-			NewContentsPageCrawler(i, queue)
+			wg.Add(1)
+			go NewContentsPageCrawler(&wg, i, queue)
 		}
+		wg.Wait()
 		close(queue)
 	}()
 
 	for s := range queue {
-		log.Println(s)
+		p := path.Join(NewContentsBaseURL, s)
+		log.Println(p)
 	}
 	wg.Done()
 }
 
+// OldContentsCrawler starts crawling on old contents pages.
 func OldContentsCrawler(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
+// OldArchiveCrawler starts crawling on archive page.
 func OldArchiveCrawler(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
 // NewContentsPageCrawler extracts direct image file path in a page.
-func NewContentsPageCrawler(page int, queue chan string) error {
+func NewContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string) error {
+	defer wg.Done()
 	value := url.Values{}
 	value.Add("page", strconv.Itoa(page))
 	urlStr := NewContentsURL + "?" + value.Encode()
 
-	resp, err := http.Get(urlStr)
+	resp, err := CustomGet(urlStr)
 	if err != nil {
 		return err
 	}
@@ -80,4 +91,15 @@ func NewContentsPageCrawler(page int, queue chan string) error {
 		}
 	}
 	return nil
+}
+
+// CustomGet replace default User-Agent header with custom one and call GET method.
+func CustomGet(urlStr string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", urlStr, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", CustomUserAgent)
+	client := &http.Client{}
+	return client.Do(req)
 }
