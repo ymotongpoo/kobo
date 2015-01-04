@@ -15,13 +15,26 @@ import (
 )
 
 const (
-	NewContentsBaseURL = `http://www.netriver.jp/rbs/usr/himanayaro/`
-	NewContentsURL     = NewContentsBaseURL + `rivbb.cgi`
-	OldContentsURL     = `http://www.netriver.jp/rbs/usr/umoo/rivbb.cgi`
-	OldArchiveURL      = `http://baka.bakufu.org/kobokora/mee/index.html`
-	CustomUserAgent    = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36`
+	// NewContentsBaseURL is the base URL of image files.
+	NewContentsBaseURL = `http://www.netriver.jp/rbs/usr/himanayaro`
 
+	// NewContentsURL is the URL of the BBS itself where new contents would be uplaoded.
+	NewContentsURL = NewContentsBaseURL + `rivbb.cgi`
+
+	// OldContentsURL is the URL of the BBS where old popular contents would be uploaded.
+	OldContentsURL = `http://www.netriver.jp/rbs/usr/umoo/rivbb.cgi`
+
+	// OldArchiveURL is the URL of the page where the archive is.
+	OldArchiveURL = `http://baka.bakufu.org/kobokora/mee/index.html`
+
+	// CustomUserAgent is based on Chrome 39 as of Jan 3, 2015.
+	CustomUserAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36`
+
+	// QueueSize is commonly used in this program to limit channel capacity.
 	QueueSize = 100
+
+	// MaxPageNum is due to the BBS' spec.
+	MaxPageNum = 8
 )
 
 func main() {
