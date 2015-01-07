@@ -53,8 +53,8 @@ func main() {
 	log.Println("*** start crawling")
 	var wg sync.WaitGroup
 	wg.Add(3)
-	go NewContentsCrawler(&wg)
-	go OldContentsCrawler(&wg)
+	// go NewContentsCrawler(&wg)
+	// go OldContentsCrawler(&wg)
 	go OldArchiveCrawler(&wg)
 	wg.Wait()
 	log.Println("*** finished crawling")
@@ -106,6 +106,7 @@ func OldContentsCrawler(wg *sync.WaitGroup) {
 func OldArchiveCrawler(wg *sync.WaitGroup) {
 	pageCh := make(chan string)
 	contentCh := make(chan string)
+	imgCh := make(chan string)
 	errCh := make(chan error)
 	go archivePageProceeder(OldArchiveURL, pageCh, errCh)
 	go func(pageCh chan string) {
@@ -114,12 +115,52 @@ func OldArchiveCrawler(wg *sync.WaitGroup) {
 			go OldArchivePageCrawler(p, contentCh, errCh)
 		}
 	}(pageCh)
+
+	go func() {
+		for c := range contentCh {
+			log.Println(c)
+			go archiveImageFetcher(c, imgCh, errCh)
+		}
+	}()
+
+	for c := range imgCh {
+		log.Println(c)
+	}
 	wg.Done()
 }
 
 // OldArchivePageCrawler extracs actual page URL in page and send it to contentCh.
 func OldArchivePageCrawler(page string, contentCh chan string, errCh chan error) {
-	return
+	resp, err := CustomGet(page)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	defer resp.Body.Close()
+
+	root, err := xmlpath.ParseHTML(resp.Body)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	img := xmlpath.MustCompile(`//div[@id='rightcol']/a/@href`)
+	iter := img.Iter(root)
+	for iter.Next() {
+		baseURL, err := url.Parse(OldArchiveBaseURL)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		relURL, err := url.Parse(iter.Node().String())
+		if err != nil {
+			errCh <- err
+			return
+		}
+		page := baseURL.ResolveReference(relURL).String()
+		if strings.HasSuffix(page, ".html") {
+			contentCh <- page
+		}
+	}
 }
 
 // archivePageProceeder finds next page URL starting from start and send it to pageCh.
@@ -127,7 +168,6 @@ func archivePageProceeder(start string, pageCh chan string, errCh chan error) {
 	resp, err := CustomGet(start)
 	if err != nil {
 		errCh <- err
-		fmt.Println("hoge")
 		return
 	}
 	defer resp.Body.Close()
@@ -161,6 +201,35 @@ func archivePageProceeder(start string, pageCh chan string, errCh chan error) {
 		log.Println(resp.Status)
 		return
 	}
+}
+
+func archiveImageFetcher(page string, imgCh chan string, errCh chan error) {
+	resp, err := CustomGet(page)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	defer resp.Body.Close()
+
+	root, err := xmlpath.ParseHTML(resp.Body)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	img := xmlpath.MustCompile(`//div[@id='rightcol']/img/@src`)
+	iter := img.Iter(root)
+	iter.Next()
+	baseURL, err := url.Parse(page)
+	if err != nil {
+		errCh <- err
+		return
+	}
+	relURL, err := url.Parse(iter.Node().String())
+	if err != nil {
+		errCh <- err
+		return
+	}
+	imgCh <- baseURL.ResolveReference(relURL).String()
 }
 
 func contentsPageCrawler(wg *sync.WaitGroup, page int, bbsURL string, xpath string, queue chan string, errCh chan error) {
