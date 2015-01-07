@@ -99,7 +99,25 @@ func OldContentsCrawler(wg *sync.WaitGroup) {
 
 // OldArchiveCrawler starts crawling on archive page.
 func OldArchiveCrawler(wg *sync.WaitGroup) {
+	pageCh := make(chan string)
+	contentCh := make(chan string)
+	go archivePageProceeder(OldArchiveURL, pageCh)
+	go func(pageCh chan string) {
+		for p := range pageCh {
+			go OldArchivePageCrawler(p, contentCh)
+		}
+	}(pageCh)
 	wg.Done()
+}
+
+// OldArchivePageCrawler extracs actual page URL in page and send it to contentCh.
+func OldArchivePageCrawler(page string, contentCh chan string) {
+	return
+}
+
+// archivePageProceeder finds next page URL starting from start and send it to pageCh.
+func archivePageProceeder(start string, pageCh chan string) {
+	return
 }
 
 func contentsPageCrawler(wg *sync.WaitGroup, page int, bbsURL string, xpath string, queue chan string, errCh chan error) {
