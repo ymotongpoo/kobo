@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -16,13 +17,16 @@ import (
 
 const (
 	// NewContentsBaseURL is the base URL of image files.
-	NewContentsBaseURL = `http://www.netriver.jp/rbs/usr/himanayaro`
+	NewContentsBaseURL = `http://www.netriver.jp/rbs/usr/himanayaro/`
 
 	// NewContentsURL is the URL of the BBS itself where new contents would be uplaoded.
 	NewContentsURL = NewContentsBaseURL + `rivbb.cgi`
 
+	// OldContentsBaseURL is the base URL of image files.
+	OldContentsBaseURL = `http://www.netriver.jp/rbs/usr/umoo/`
+
 	// OldContentsURL is the URL of the BBS where old popular contents would be uploaded.
-	OldContentsURL = `http://www.netriver.jp/rbs/usr/umoo/rivbb.cgi`
+	OldContentsURL = OldContentsBaseURL + `rivbb.cgi`
 
 	// OldArchiveURL is the URL of the page where the archive is.
 	OldArchiveURL = `http://baka.bakufu.org/kobokora/mee/index.html`
@@ -33,8 +37,11 @@ const (
 	// QueueSize is commonly used in this program to limit channel capacity.
 	QueueSize = 100
 
-	// MaxPageNum is due to the BBS' spec.
-	MaxPageNum = 8
+	// MaxNewContentsPageNum is due to the BBS' spec.
+	MaxNewContentsPageNum = 8
+
+	// MaxOldContentsPageNum is due to the BBS' spec.
+	MaxOldContentsPageNum = 3
 )
 
 func main() {
@@ -45,17 +52,18 @@ func main() {
 	go OldContentsCrawler(&wg)
 	go OldArchiveCrawler(&wg)
 	wg.Wait()
+	log.Println("*** finished crawling")
 }
 
-// NewContentsCrawler starts crawling on new contents pages.
-func NewContentsCrawler(wg *sync.WaitGroup) {
+// NewContentsCrawler starts crawling on contents pages.
+func contentsCrawler(wg *sync.WaitGroup, maxPage int, baseURL string) {
 	dir := filepath.Join(os.TempDir(), "new")
 	_ = dir
 	queue := make(chan string, QueueSize)
 	errCh := make(chan error, QueueSize)
 	go func() {
 		var wg sync.WaitGroup
-		for i := 0; i < 10; i++ {
+		for i := 0; i < MaxNewContentsPageNum; i++ {
 			wg.Add(1)
 			go NewContentsPageCrawler(&wg, i, queue, errCh)
 		}
@@ -70,7 +78,7 @@ LOOP:
 			if !ok {
 				break LOOP
 			}
-			p := path.Join(NewContentsBaseURL, s)
+			p := path.Join(baseURL, s)
 			log.Println(p)
 		case err := <-errCh:
 			log.Println(err)
@@ -79,9 +87,14 @@ LOOP:
 	wg.Done()
 }
 
-// OldContentsCrawler starts crawling on old contents pages.
+// NewContentsCrawler starts crawling on new contents pages.
+func NewContentsCrawler(wg *sync.WaitGroup) {
+	contentsCrawler(wg, MaxNewContentsPageNum, NewContentsBaseURL)
+}
+
+// OldContentsCrawler starts crawling on new contents pages.
 func OldContentsCrawler(wg *sync.WaitGroup) {
-	wg.Done()
+	contentsCrawler(wg, MaxOldContentsPageNum, OldContentsBaseURL)
 }
 
 // OldArchiveCrawler starts crawling on archive page.
@@ -89,12 +102,11 @@ func OldArchiveCrawler(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-// NewContentsPageCrawler extracts direct image file path in a page.
-func NewContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string, errCh chan error) {
+func contentsPageCrawler(wg *sync.WaitGroup, page int, bbsURL string, xpath string, queue chan string, errCh chan error) {
 	defer wg.Done()
 	value := url.Values{}
-	value.Add("page", strconv.Itoa(page))
-	urlStr := NewContentsURL + "?" + value.Encode()
+	value.Add("page", strconv.Itoa(page+1))
+	urlStr := bbsURL + "?" + value.Encode()
 
 	resp, err := CustomGet(urlStr)
 	if err != nil {
@@ -102,7 +114,12 @@ func NewContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string, err
 	}
 	defer resp.Body.Close()
 
-	img := xmlpath.MustCompile(`//tbody//a/@href`)
+	if resp.StatusCode != http.StatusOK {
+		errCh <- fmt.Errorf("HTTP status error on page %v: %v", page, resp.Status)
+		return
+	}
+
+	img := xmlpath.MustCompile(xpath)
 	root, err := xmlpath.ParseHTML(resp.Body)
 	if err != nil {
 		errCh <- err
@@ -115,6 +132,16 @@ func NewContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string, err
 			queue <- n.String()
 		}
 	}
+}
+
+// NewContentsPageCrawler extracts direct image file path in a page.
+func NewContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string, errCh chan error) {
+	contentsPageCrawler(wg, page, NewContentsURL, `//tbody//a/@href`, queue, errCh)
+}
+
+// OldContentsPageCrawler extracts direct image file path in a page.
+func OldContentsPageCrawler(wg *sync.WaitGroup, page int, queue chan string, errCh chan error) {
+	contentsPageCrawler(wg, page, OldContentsURL, `//tbody//a/@href`, queue, errCh)
 }
 
 // CustomGet replace default User-Agent header with custom one and call GET method.
