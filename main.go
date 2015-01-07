@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	xmlpath "gopkg.in/xmlpath.v2"
 )
@@ -28,8 +29,11 @@ const (
 	// OldContentsURL is the URL of the BBS where old popular contents would be uploaded.
 	OldContentsURL = OldContentsBaseURL + `rivbb.cgi`
 
+	// OldArchiveBaseURL is the base URL of archive pages.
+	OldArchiveBaseURL = `http://baka.bakufu.org/kobokora/mee/`
+
 	// OldArchiveURL is the URL of the page where the archive is.
-	OldArchiveURL = `http://baka.bakufu.org/kobokora/mee/index.html`
+	OldArchiveURL = OldArchiveBaseURL + `index.html`
 
 	// CustomUserAgent is based on Chrome 39 as of Jan 3, 2015.
 	CustomUserAgent = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36`
@@ -45,6 +49,7 @@ const (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	log.Println("*** start crawling")
 	var wg sync.WaitGroup
 	wg.Add(3)
@@ -78,7 +83,7 @@ LOOP:
 			if !ok {
 				break LOOP
 			}
-			p := path.Join(baseURL, s)
+			p := baseURL + s
 			log.Println(p)
 		case err := <-errCh:
 			log.Println(err)
@@ -101,23 +106,61 @@ func OldContentsCrawler(wg *sync.WaitGroup) {
 func OldArchiveCrawler(wg *sync.WaitGroup) {
 	pageCh := make(chan string)
 	contentCh := make(chan string)
-	go archivePageProceeder(OldArchiveURL, pageCh)
+	errCh := make(chan error)
+	go archivePageProceeder(OldArchiveURL, pageCh, errCh)
 	go func(pageCh chan string) {
 		for p := range pageCh {
-			go OldArchivePageCrawler(p, contentCh)
+			log.Println(p)
+			go OldArchivePageCrawler(p, contentCh, errCh)
 		}
 	}(pageCh)
 	wg.Done()
 }
 
 // OldArchivePageCrawler extracs actual page URL in page and send it to contentCh.
-func OldArchivePageCrawler(page string, contentCh chan string) {
+func OldArchivePageCrawler(page string, contentCh chan string, errCh chan error) {
 	return
 }
 
 // archivePageProceeder finds next page URL starting from start and send it to pageCh.
-func archivePageProceeder(start string, pageCh chan string) {
-	return
+func archivePageProceeder(start string, pageCh chan string, errCh chan error) {
+	resp, err := CustomGet(start)
+	if err != nil {
+		errCh <- err
+		fmt.Println("hoge")
+		return
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		log.Println("archive page proceeding finished")
+		close(pageCh)
+		return
+	case http.StatusOK:
+		root, err := xmlpath.ParseHTML(resp.Body)
+		if err != nil {
+			errCh <- err
+			break
+		}
+		var link *xmlpath.Path
+		link = xmlpath.MustCompile(`//div[@id='foot']/a[3]/@href`)
+		if !link.Exists(root) {
+			link = xmlpath.MustCompile(`//div[@id='foot']/a[2]/@href`)
+		}
+		iter := link.Iter(root)
+		iter.Next()
+		nextPage := OldArchiveBaseURL + iter.Node().String()
+		if nextPage == OldArchiveURL {
+			return
+		}
+		pageCh <- nextPage
+		time.Sleep(1 * time.Second)
+		archivePageProceeder(nextPage, pageCh, errCh)
+	default:
+		log.Println(resp.Status)
+		return
+	}
 }
 
 func contentsPageCrawler(wg *sync.WaitGroup, page int, bbsURL string, xpath string, queue chan string, errCh chan error) {
