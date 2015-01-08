@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -46,15 +48,32 @@ const (
 
 	// MaxOldContentsPageNum is due to the BBS' spec.
 	MaxOldContentsPageNum = 3
+
+	DownloadInterval = 3 * time.Second
 )
+
+var SaveDir string
+
+func init() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	SaveDir = filepath.Join(cwd, "images")
+	err = os.MkdirAll(SaveDir, 0755)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Printf("*** target save dir -> %v\n", SaveDir)
 	log.Println("*** start crawling")
 	var wg sync.WaitGroup
 	wg.Add(3)
-	// go NewContentsCrawler(&wg)
-	// go OldContentsCrawler(&wg)
+	go NewContentsCrawler(&wg)
+	go OldContentsCrawler(&wg)
 	go OldArchiveCrawler(&wg)
 	wg.Wait()
 	log.Println("*** finished crawling")
@@ -62,8 +81,6 @@ func main() {
 
 // NewContentsCrawler starts crawling on contents pages.
 func contentsCrawler(wg *sync.WaitGroup, maxPage int, baseURL string) {
-	dir := filepath.Join(os.TempDir(), "new")
-	_ = dir
 	queue := make(chan string, QueueSize)
 	errCh := make(chan error, QueueSize)
 	go func() {
@@ -84,7 +101,9 @@ LOOP:
 				break LOOP
 			}
 			p := baseURL + s
-			log.Println(p)
+			log.Println("Downlaoding from thread:", p)
+			DownloadFile(p, SaveDir)
+			time.Sleep(DownloadInterval)
 		case err := <-errCh:
 			log.Println(err)
 		}
@@ -118,13 +137,15 @@ func OldArchiveCrawler(wg *sync.WaitGroup) {
 
 	go func() {
 		for c := range contentCh {
-			log.Println(c)
+			log.Println("Downloading from archive:", c)
 			go archiveImageFetcher(c, imgCh, errCh)
+			time.Sleep(DownloadInterval)
 		}
 	}()
 
 	for c := range imgCh {
 		log.Println(c)
+		DownloadFile(c, SaveDir)
 	}
 	wg.Done()
 }
@@ -283,4 +304,22 @@ func CustomGet(urlStr string) (*http.Response, error) {
 	req.Header.Set("User-Agent", CustomUserAgent)
 	client := &http.Client{}
 	return client.Do(req)
+}
+
+func DownloadFile(urlStr string, dir string) (string, error) {
+	resp, err := CustomGet(urlStr)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	base := path.Base(urlStr)
+	path := filepath.Join(dir, base)
+	file, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	io.Copy(file, resp.Body)
+	return path, nil
 }
