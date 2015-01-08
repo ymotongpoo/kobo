@@ -132,21 +132,19 @@ func OldArchiveCrawler(wg *sync.WaitGroup) {
 	go archivePageProceeder(OldArchiveURL, pageCh, errCh)
 	go func(pageCh chan string) {
 		for p := range pageCh {
-			log.Println(p)
 			go OldArchivePageCrawler(p, contentCh, errCh)
 		}
 	}(pageCh)
 
 	go func() {
 		for c := range contentCh {
-			log.Println("Downloading from archive:", c)
 			go archiveImageFetcher(c, imgCh, errCh)
 			time.Sleep(DownloadInterval)
 		}
 	}()
 
 	for c := range imgCh {
-		log.Println(c)
+		log.Println("Downloading from archive:", c)
 		DownloadFile(c, SaveDir)
 	}
 	wg.Done()
