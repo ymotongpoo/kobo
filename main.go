@@ -49,9 +49,11 @@ const (
 	// MaxOldContentsPageNum is due to the BBS' spec.
 	MaxOldContentsPageNum = 3
 
+	// DownloadInterval is the interval for download.
 	DownloadInterval = 3 * time.Second
 )
 
+// SaveDir is target directory to save images.
 var SaveDir string
 
 func init() {
@@ -306,6 +308,7 @@ func CustomGet(urlStr string) (*http.Response, error) {
 	return client.Do(req)
 }
 
+// DownloadFile save images on urlStr to dir.
 func DownloadFile(urlStr string, dir string) (string, error) {
 	resp, err := CustomGet(urlStr)
 	if err != nil {
