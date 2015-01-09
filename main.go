@@ -208,14 +208,18 @@ func archivePageProceeder(start string, pageCh chan string, errCh chan error) {
 			break
 		}
 		var link *xmlpath.Path
+		// Except for first and last pages, hyperlinks in footer should be:
+		//   < 前のページ　| TOP | 次のページ >
+		// The last one is what we need.
 		link = xmlpath.MustCompile(`//div[@id='foot']/a[3]/@href`)
 		if !link.Exists(root) {
+			// In first page, the link to previous page doesn't exist.
 			link = xmlpath.MustCompile(`//div[@id='foot']/a[2]/@href`)
 		}
 		iter := link.Iter(root)
 		iter.Next()
 		nextPage := OldArchiveBaseURL + iter.Node().String()
-		if nextPage == OldArchiveURL {
+		if nextPage == OldArchiveURL { // In last page, second link is pointing to start page.
 			return
 		}
 		pageCh <- nextPage
