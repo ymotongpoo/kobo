@@ -51,6 +51,9 @@ const (
 
 	// DownloadInterval is the interval for download.
 	DownloadInterval = 3 * time.Second
+
+	// PageProceedInterval is the interval to proceed pages in old threads.
+	PageProceedInterval = 2 * time.Second
 )
 
 // SaveDir is target directory to save images.
@@ -216,7 +219,7 @@ func archivePageProceeder(start string, pageCh chan string, errCh chan error) {
 			return
 		}
 		pageCh <- nextPage
-		time.Sleep(1 * time.Second)
+		time.Sleep(PageProceedInterval)
 		archivePageProceeder(nextPage, pageCh, errCh)
 	default:
 		log.Println(resp.Status)
