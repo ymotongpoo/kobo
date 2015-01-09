@@ -110,7 +110,7 @@ LOOP:
 			DownloadFile(p, SaveDir)
 			time.Sleep(DownloadInterval)
 		case err := <-errCh:
-			log.Println(err)
+			log.Println("Error:", err)
 		}
 	}
 	wg.Done()
